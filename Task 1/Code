@@ -1,0 +1,67 @@
+// Pin delegations
+const int greenLight = 2;
+const int yellowLight = 3;
+const int redLight = 4;
+
+// State definitions
+enum TrafficState { Green, Yellow, Red };
+TrafficState currentState = Green;
+
+// Time event labels for presentation (t20 etc.)
+// These are ONLY symbolic and mapped to actual durations below.
+const unsigned long t20 = 10000; // Represents 10 seconds (Green)
+const unsigned long t6  = 3000;  // Represents 3 seconds (Yellow)
+const unsigned long t10 = 5000;  // Represents 5 seconds (Red)
+
+// Durations bound to the symbolic time events
+unsigned long previousMs = 0;
+const unsigned long greenDuration  = t20;
+const unsigned long yellowDuration = t6;
+const unsigned long redDuration    = t10;
+
+void setup() {
+  pinMode(greenLight, OUTPUT);
+  pinMode(yellowLight, OUTPUT);
+  pinMode(redLight, OUTPUT);
+
+  // Initial state: Green
+  digitalWrite(greenLight, HIGH);
+  previousMs = millis();
+}
+
+void loop() {
+  unsigned long currentMs = millis();
+
+  switch (currentState) {
+
+    case Green:
+      // Control the light according to timing event t20
+      if (currentMs - previousMs >= greenDuration) {
+        digitalWrite(greenLight, LOW);
+        digitalWrite(yellowLight, HIGH);
+        currentState = Yellow;
+        previousMs = currentMs;
+      }
+      break;
+
+    case Yellow:
+      // Control the light according to timing event t6
+      if (currentMs - previousMs >= yellowDuration) {
+        digitalWrite(yellowLight, LOW);
+        digitalWrite(redLight, HIGH);
+        currentState = Red;
+        previousMs = currentMs;
+      }
+      break;
+
+    case Red:
+      // Control the light according to timing event t10
+      if (currentMs - previousMs >= redDuration) {
+        digitalWrite(redLight, LOW);
+        digitalWrite(greenLight, HIGH);
+        currentState = Green;
+        previousMs = currentMs;
+      }
+      break;
+  }
+}
