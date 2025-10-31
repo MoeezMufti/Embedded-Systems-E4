@@ -1,0 +1,135 @@
+#include <Wire.h>
+
+// Pin definitions
+const int greenLight = 6;
+const int yellowLight = 5;
+const int redLight = 4;
+const int pedRed = 7;
+const int pedGreen = 8;
+const int button = 2;  // interrupt-capable
+
+volatile bool buttonPressed = false; // Flag set by interrupt
+unsigned long previousMs = 0;
+unsigned long buttonPressMs = 0;    // Time when button was pressed
+unsigned long greenDuration = 10000; // Normal green duration = 10s
+unsigned long yellowDuration = 5000; // Yellow = 5s
+unsigned long redDuration = 0;       // Managed dynamically
+
+enum TrafficState { Green, Yellow, Red };
+TrafficState currentState = Green;
+
+void setup() {
+  pinMode(greenLight, OUTPUT);
+  pinMode(yellowLight, OUTPUT);
+  pinMode(redLight, OUTPUT);
+  pinMode(pedRed, OUTPUT);
+  pinMode(pedGreen, OUTPUT);
+  pinMode(button, INPUT_PULLUP);
+
+  attachInterrupt(digitalPinToInterrupt(button), buttonISR, FALLING);
+
+  // Start with traffic green and pedestrian red
+  digitalWrite(greenLight, HIGH);
+  digitalWrite(pedRed, HIGH);
+  previousMs = millis();
+  buttonPressMs = 0; // No button press yet
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  switch (currentState) {
+    case Green:
+      // If button pressed, start counting 3s from the press
+      if (buttonPressMs != 0) {
+        // Check if 3s passed since button press OR normal green duration exceeded
+        if ((now - buttonPressMs >= 3000) || (now - previousMs >= greenDuration)) {
+          exitGreen();
+          enterYellow();
+          buttonPressMs = 0; // reset button timer
+        }
+      } else {
+        // No button pressed yet: check normal green duration
+        if (now - previousMs >= greenDuration) {
+          exitGreen();
+          enterYellow();
+        }
+      }
+      break;
+
+    case Yellow:
+      if (now - previousMs >= yellowDuration) {
+        exitYellow();
+        enterRed();
+      }
+      break;
+
+    case Red:
+      if (now - previousMs >= redDuration) {
+        exitRed();
+        enterGreen();
+      }
+      break;
+  }
+}
+
+// ======== STATE TRANSITION FUNCTIONS ========
+
+void enterGreen() {
+  digitalWrite(greenLight, HIGH);
+  digitalWrite(yellowLight, LOW);
+  digitalWrite(redLight, LOW);
+
+  digitalWrite(pedGreen, LOW);
+  digitalWrite(pedRed, HIGH);
+
+  currentState = Green;
+  previousMs = millis();
+  buttonPressMs = 0; // reset button timer when entering green
+}
+
+void exitGreen() {
+  digitalWrite(greenLight, LOW);
+}
+
+void enterYellow() {
+  digitalWrite(yellowLight, HIGH);
+  currentState = Yellow;
+  previousMs = millis();
+}
+
+void exitYellow() {
+  digitalWrite(yellowLight, LOW);
+}
+
+void enterRed() {
+  digitalWrite(redLight, HIGH);
+  currentState = Red;
+  previousMs = millis();
+
+  // Pedestrian sequence
+  digitalWrite(pedRed, LOW);
+  delay(2000);               // Wait before allowing pedestrians
+  digitalWrite(pedGreen, HIGH);
+  delay(5000);               // Pedestrian green duration
+
+  // Reset pedestrian lights
+  digitalWrite(pedGreen, LOW);
+  digitalWrite(pedRed, HIGH);
+
+  redDuration = 1000; // short pause before returning to green
+}
+
+void exitRed() {
+  digitalWrite(redLight, LOW);
+  buttonPressed = false; // Reset button flag
+}
+
+// ======== INTERRUPT ========
+void buttonISR() {
+  // Only register button press if traffic light is green
+  if (currentState == Green && buttonPressMs == 0) {
+    buttonPressed = true;
+    buttonPressMs = millis(); // store time of press
+  }
+}
