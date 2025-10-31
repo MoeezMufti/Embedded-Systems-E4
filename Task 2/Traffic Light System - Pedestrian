@@ -1,18 +1,18 @@
 #include <Wire.h>
 
 // Pin definitions
-const int greenLight = 2;
-const int yellowLight = 3;
+const int greenLight = 6;
+const int yellowLight = 5;
 const int redLight = 4;
-const int pedRed = 5;
-const int pedGreen = 6;
-const int button = 7;
+const int pedRed = 7;
+const int pedGreen = 8;
+const int button = 2;  // interrupt-capable
 
 volatile bool buttonPressed = false; // Flag set by interrupt
 unsigned long previousMs = 0;
-unsigned long greenDuration = 10000; // min 10 time units
-unsigned long yellowDuration = 5000; // min 5 time units
-unsigned long redDuration = 0;       // managed dynamically
+unsigned long greenDuration = 10000; // Normal green duration = 10s
+unsigned long yellowDuration = 5000; // Yellow = 5s
+unsigned long redDuration = 0;       // Managed dynamically
 
 enum TrafficState { Green, Yellow, Red };
 TrafficState currentState = Green;
@@ -27,7 +27,7 @@ void setup() {
 
   attachInterrupt(digitalPinToInterrupt(button), buttonISR, FALLING);
 
-  // Starts with green light on and pedestrian red
+  // Start with traffic green and pedestrian red
   digitalWrite(greenLight, HIGH);
   digitalWrite(pedRed, HIGH);
   previousMs = millis();
@@ -38,9 +38,13 @@ void loop() {
 
   switch (currentState) {
     case Green:
-      // Stays green for at least 10s or until button pressed
-      if ((buttonPressed && (now - previousMs >= greenDuration)) ||
-          (now - previousMs >= greenDuration)) {
+      // If button pressed, switch to yellow early (within 3 seconds)
+      if (buttonPressed && (now - previousMs >= 3000)) {
+        exitGreen();
+        enterYellow();
+      }
+      // If no button pressed, normal 10s green duration
+      else if (!buttonPressed && (now - previousMs >= greenDuration)) {
         exitGreen();
         enterYellow();
       }
@@ -97,9 +101,9 @@ void enterRed() {
 
   // Pedestrian sequence
   digitalWrite(pedRed, LOW);
-  delay(2000);               // wait before allowing pedestrians
+  delay(2000);               // Wait before allowing pedestrians
   digitalWrite(pedGreen, HIGH);
-  delay(5000);               // pedestrian green duration
+  delay(5000);               // Pedestrian green duration
 
   // Reset pedestrian lights
   digitalWrite(pedGreen, LOW);
@@ -110,7 +114,7 @@ void enterRed() {
 
 void exitRed() {
   digitalWrite(redLight, LOW);
-  buttonPressed = false;
+  buttonPressed = false; // Reset button flag
 }
 
 void buttonISR() {
