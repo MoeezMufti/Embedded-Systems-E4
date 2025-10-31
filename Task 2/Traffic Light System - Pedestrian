@@ -1,0 +1,118 @@
+#include <Wire.h>
+
+// Pin definitions
+const int greenLight = 2;
+const int yellowLight = 3;
+const int redLight = 4;
+const int pedRed = 5;
+const int pedGreen = 6;
+const int button = 7;
+
+volatile bool buttonPressed = false; // Flag set by interrupt
+unsigned long previousMs = 0;
+unsigned long greenDuration = 10000; // min 10 time units
+unsigned long yellowDuration = 5000; // min 5 time units
+unsigned long redDuration = 0;       // managed dynamically
+
+enum TrafficState { Green, Yellow, Red };
+TrafficState currentState = Green;
+
+void setup() {
+  pinMode(greenLight, OUTPUT);
+  pinMode(yellowLight, OUTPUT);
+  pinMode(redLight, OUTPUT);
+  pinMode(pedRed, OUTPUT);
+  pinMode(pedGreen, OUTPUT);
+  pinMode(button, INPUT_PULLUP);
+
+  attachInterrupt(digitalPinToInterrupt(button), buttonISR, FALLING);
+
+  // Starts with green light on and pedestrian red
+  digitalWrite(greenLight, HIGH);
+  digitalWrite(pedRed, HIGH);
+  previousMs = millis();
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  switch (currentState) {
+    case Green:
+      // Stays green for at least 10s or until button pressed
+      if ((buttonPressed && (now - previousMs >= greenDuration)) ||
+          (now - previousMs >= greenDuration)) {
+        exitGreen();
+        enterYellow();
+      }
+      break;
+
+    case Yellow:
+      if (now - previousMs >= yellowDuration) {
+        exitYellow();
+        enterRed();
+      }
+      break;
+
+    case Red:
+      if (now - previousMs >= redDuration) {
+        exitRed();
+        enterGreen();
+      }
+      break;
+  }
+}
+
+// ======== STATE TRANSITION FUNCTIONS ========
+
+void enterGreen() {
+  digitalWrite(greenLight, HIGH);
+  digitalWrite(yellowLight, LOW);
+  digitalWrite(redLight, LOW);
+
+  digitalWrite(pedGreen, LOW);
+  digitalWrite(pedRed, HIGH);
+
+  currentState = Green;
+  previousMs = millis();
+}
+
+void exitGreen() {
+  digitalWrite(greenLight, LOW);
+}
+
+void enterYellow() {
+  digitalWrite(yellowLight, HIGH);
+  currentState = Yellow;
+  previousMs = millis();
+}
+
+void exitYellow() {
+  digitalWrite(yellowLight, LOW);
+}
+
+void enterRed() {
+  digitalWrite(redLight, HIGH);
+  currentState = Red;
+  previousMs = millis();
+
+  // Pedestrian sequence
+  digitalWrite(pedRed, LOW);
+  delay(2000);               // wait before allowing pedestrians
+  digitalWrite(pedGreen, HIGH);
+  delay(5000);               // pedestrian green duration
+
+  // Reset pedestrian lights
+  digitalWrite(pedGreen, LOW);
+  digitalWrite(pedRed, HIGH);
+
+  redDuration = 1000; // short pause before returning to green
+}
+
+void exitRed() {
+  digitalWrite(redLight, LOW);
+  buttonPressed = false;
+}
+
+void buttonISR() {
+  buttonPressed = true;
+}
