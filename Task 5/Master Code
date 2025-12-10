@@ -1,0 +1,121 @@
+// MASTER (Top Arduino) - UART version
+
+// Traffic light pins
+const int bottomGreenLight = 2;
+const int bottomYellowLight = 3;
+const int bottomRedLight = 4;
+
+const int secondaryBottomGreenLight = 7;
+const int secondaryBottomYellowLight = 6;
+const int secondaryBottomRedLight = 5;
+
+// Pedestrian LEDs (local)
+const int pedRed = 9;
+const int pedGreen = 10;
+
+// Button
+const int button = 11;
+
+enum TrafficState { GREEN, YELLOW, RED };
+TrafficState currentState = GREEN;
+
+unsigned long stateTimer = 0;
+bool buttonPressed = false;
+
+void setup() {
+  // Traffic lights
+  pinMode(bottomGreenLight, OUTPUT);
+  pinMode(bottomYellowLight, OUTPUT);
+  pinMode(bottomRedLight, OUTPUT);
+
+  pinMode(secondaryBottomGreenLight, OUTPUT);
+  pinMode(secondaryBottomYellowLight, OUTPUT);
+  pinMode(secondaryBottomRedLight, OUTPUT);
+
+  pinMode(pedRed, OUTPUT);
+  pinMode(pedGreen, OUTPUT);
+
+  pinMode(button, INPUT_PULLUP);
+
+  // UART initialization
+  Serial.begin(9600);
+
+  // Initial state
+  digitalWrite(bottomGreenLight, HIGH);
+  digitalWrite(secondaryBottomGreenLight, HIGH);
+  digitalWrite(bottomRedLight, LOW);
+  digitalWrite(secondaryBottomRedLight, LOW);
+
+  digitalWrite(pedRed, HIGH);
+  digitalWrite(pedGreen, LOW);
+
+  stateTimer = millis();
+}
+
+void loop() {
+  // Detect pedestrian button press during GREEN
+  if (currentState == GREEN && !buttonPressed && digitalRead(button) == LOW) {
+    buttonPressed = true;
+    
+    // Send UART message instead of digitalWrite(buttonSignalPin, HIGH);
+    Serial.println("PED_REQUEST");
+
+    delay(50); // Debounce
+  }
+
+  switch (currentState) {
+
+    case GREEN:
+      if (millis() - stateTimer >= (buttonPressed ? 5000 : 10000)) {
+
+        digitalWrite(bottomGreenLight, LOW);
+        digitalWrite(secondaryBottomGreenLight, LOW);
+
+        digitalWrite(bottomYellowLight, HIGH);
+        digitalWrite(secondaryBottomYellowLight, HIGH);
+
+        currentState = YELLOW;
+        stateTimer = millis();
+      }
+      break;
+
+    case YELLOW:
+      if (millis() - stateTimer >= 2000) {
+
+        digitalWrite(bottomYellowLight, LOW);
+        digitalWrite(secondaryBottomYellowLight, LOW);
+
+        digitalWrite(bottomRedLight, HIGH);
+        digitalWrite(secondaryBottomRedLight, HIGH);
+
+        // Pedestrian allowed
+        digitalWrite(pedGreen, HIGH);
+        digitalWrite(pedRed, LOW);
+
+        currentState = RED;
+        stateTimer = millis();
+      }
+      break;
+
+    case RED:
+      if (millis() - stateTimer >= 10000) {
+
+        digitalWrite(bottomRedLight, LOW);
+        digitalWrite(secondaryBottomRedLight, LOW);
+
+        digitalWrite(bottomGreenLight, HIGH);
+        digitalWrite(secondaryBottomGreenLight, HIGH);
+
+        digitalWrite(pedGreen, LOW);
+        digitalWrite(pedRed, HIGH);
+
+        // Instead of resetting GPIO line: nothing to send here
+        buttonPressed = false;
+
+        currentState = GREEN;
+        stateTimer = millis();
+      }
+      break;
+  }
+}
+
