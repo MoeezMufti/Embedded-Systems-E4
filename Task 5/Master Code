@@ -1,20 +1,42 @@
-// MASTER (Top Arduino) - UART version
-
-// Traffic light pins
+// Master (Top Arduino)
 const int bottomGreenLight = 2;
 const int bottomYellowLight = 3;
-const int bottomRedLight = 4;
+const int bottomRedLight   = 4;
 
-const int secondaryBottomGreenLight = 7;
+const int secondaryBottomGreenLight  = 7;
 const int secondaryBottomYellowLight = 6;
-const int secondaryBottomRedLight = 5;
+const int secondaryBottomRedLight    = 5;
 
-// Pedestrian LEDs (local)
-const int pedRed = 9;
+const int pedRed   = 9;
 const int pedGreen = 10;
 
-// Button
-const int button = 11;
+const int button = 11;   // Pedestrian button (INPUT_PULLUP)
+
+// Segment mapping: a, b, c, d, e, f, g
+const int segA = 8;   // D8
+const int segB = A0;  // digital 14
+const int segC = A1;  // digital 15
+const int segD = A2;  // digital 16
+const int segE = A3;  // digital 17
+const int segF = A4;  // digital 18
+const int segG = A5;  // digital 19
+
+const int segmentPins[7] = { segA, segB, segC, segD, segE, segF, segG };
+
+// Digit patterns for 0–9 for common cathode (1 = segment ON)
+const byte digitPatterns[10][7] = {
+  // a, b, c, d, e, f, g
+  {1,1,1,1,1,1,0}, // 0
+  {0,1,1,0,0,0,0}, // 1
+  {1,1,0,1,1,0,1}, // 2
+  {1,1,1,1,0,0,1}, // 3
+  {0,1,1,0,0,1,1}, // 4
+  {1,0,1,1,0,1,1}, // 5
+  {1,0,1,1,1,1,1}, // 6
+  {1,1,1,0,0,0,0}, // 7
+  {1,1,1,1,1,1,1}, // 8
+  {1,1,1,1,0,1,1}  // 9
+};
 
 enum TrafficState { GREEN, YELLOW, RED };
 TrafficState currentState = GREEN;
@@ -22,8 +44,38 @@ TrafficState currentState = GREEN;
 unsigned long stateTimer = 0;
 bool buttonPressed = false;
 
+void sendState() {
+  switch (currentState) {
+    case GREEN:
+      Serial.println("STATE_GREEN");
+      break;
+    case YELLOW:
+      Serial.println("STATE_YELLOW");
+      break;
+    case RED:
+      Serial.println("STATE_RED");
+      break;
+  }
+}
+
+void blankDisplay() {
+  for (int i = 0; i < 7; i++) {
+    digitalWrite(segmentPins[i], LOW);  // common cathode: LOW = off
+  }
+}
+
+void displayDigit(int d) {
+  if (d < 0 || d > 9) {
+    blankDisplay();
+    return;
+  }
+  for (int i = 0; i < 7; i++) {
+    digitalWrite(segmentPins[i], digitPatterns[d][i] ? HIGH : LOW);
+  }
+}
+
 void setup() {
-  // Traffic lights
+  // Car lights
   pinMode(bottomGreenLight, OUTPUT);
   pinMode(bottomYellowLight, OUTPUT);
   pinMode(bottomRedLight, OUTPUT);
@@ -32,17 +84,29 @@ void setup() {
   pinMode(secondaryBottomYellowLight, OUTPUT);
   pinMode(secondaryBottomRedLight, OUTPUT);
 
+  // Pedestrian LEDs
   pinMode(pedRed, OUTPUT);
   pinMode(pedGreen, OUTPUT);
 
+  // Button
   pinMode(button, INPUT_PULLUP);
 
-  // UART initialization
+  // 7-seg pins
+  for (int i = 0; i < 7; i++) {
+    pinMode(segmentPins[i], OUTPUT);
+  }
+  blankDisplay();
+
+  // UART
   Serial.begin(9600);
 
-  // Initial state
+  // Initial state: cars GREEN, pedestrian RED
   digitalWrite(bottomGreenLight, HIGH);
   digitalWrite(secondaryBottomGreenLight, HIGH);
+
+  digitalWrite(bottomYellowLight, LOW);
+  digitalWrite(secondaryBottomYellowLight, LOW);
+
   digitalWrite(bottomRedLight, LOW);
   digitalWrite(secondaryBottomRedLight, LOW);
 
@@ -50,24 +114,30 @@ void setup() {
   digitalWrite(pedGreen, LOW);
 
   stateTimer = millis();
+  sendState();
 }
 
 void loop() {
-  // Detect pedestrian button press during GREEN
+  // Check button during GREEN
   if (currentState == GREEN && !buttonPressed && digitalRead(button) == LOW) {
     buttonPressed = true;
-    
-    // Send UART message instead of digitalWrite(buttonSignalPin, HIGH);
-    Serial.println("PED_REQUEST");
-
-    delay(50); // Debounce
+    delay(50); // debouncing
   }
 
   switch (currentState) {
 
-    case GREEN:
-      if (millis() - stateTimer >= (buttonPressed ? 5000 : 10000)) {
+    case GREEN: {
+      // Current timing: 10s if no button; 5s if button pressed
+      unsigned long elapsed = millis() - stateTimer;
+      unsigned long requiredGreen = buttonPressed ? 5000UL : 10000UL;
 
+      // While cars are green, pedestrian is red, so blank display
+      blankDisplay();
+      digitalWrite(pedRed, HIGH);
+      digitalWrite(pedGreen, LOW);
+
+      if (elapsed >= requiredGreen) {
+        // Transition to YELLOW
         digitalWrite(bottomGreenLight, LOW);
         digitalWrite(secondaryBottomGreenLight, LOW);
 
@@ -76,46 +146,64 @@ void loop() {
 
         currentState = YELLOW;
         stateTimer = millis();
+        sendState();
       }
       break;
+    }
 
-    case YELLOW:
-      if (millis() - stateTimer >= 2000) {
+    case YELLOW: {
+      // Cars yellow, ped still red, display stays blank
+      blankDisplay();
+      digitalWrite(pedRed, HIGH);
+      digitalWrite(pedGreen, LOW);
 
+      if (millis() - stateTimer >= 2000UL) { // 2 seconds yellow
+        // Transition to RED (cars stop, ped go)
         digitalWrite(bottomYellowLight, LOW);
         digitalWrite(secondaryBottomYellowLight, LOW);
 
         digitalWrite(bottomRedLight, HIGH);
         digitalWrite(secondaryBottomRedLight, HIGH);
 
-        // Pedestrian allowed
-        digitalWrite(pedGreen, HIGH);
+        digitalWrite(pedGreen, HIGH);  // pedestrian can cross
         digitalWrite(pedRed, LOW);
 
         currentState = RED;
         stateTimer = millis();
+        sendState();
       }
       break;
+    }
 
-    case RED:
-      if (millis() - stateTimer >= 10000) {
+    case RED: {
+      // Cars red, pedestrian green: show countdown 9 till 0
+      unsigned long elapsed = millis() - stateTimer;
 
+      // Each second, decrease the displayed number
+      int remaining = 9 - (int)(elapsed / 1000UL);
+      if (remaining < 0) remaining = 0;
+
+      displayDigit(remaining);
+
+      if (elapsed >= 10000UL) { // 10 seconds of red/ped green
+        // Back to GREEN
         digitalWrite(bottomRedLight, LOW);
         digitalWrite(secondaryBottomRedLight, LOW);
 
         digitalWrite(bottomGreenLight, HIGH);
         digitalWrite(secondaryBottomGreenLight, HIGH);
 
-        digitalWrite(pedGreen, LOW);
+        digitalWrite(pedGreen, LOW);  // stop pedestrian crossing
         digitalWrite(pedRed, HIGH);
 
-        // Instead of resetting GPIO line: nothing to send here
-        buttonPressed = false;
+        blankDisplay();  // turn off countdown
 
         currentState = GREEN;
+        buttonPressed = false;
         stateTimer = millis();
+        sendState();
       }
       break;
+    }
   }
 }
-
