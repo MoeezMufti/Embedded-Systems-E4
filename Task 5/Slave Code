@@ -1,82 +1,44 @@
-// SLAVE (Bottom Arduino) - UART version
+// SLAVE (Bottom Arduino)
 
-// Traffic light pins for the slave intersection
-const int greenLight  = 2;
-const int yellowLight = 3;
-const int redLight    = 4;
+const int slaveGreen  = 2;
+const int slaveYellow = 3;  // unused in this simple mapping
+const int slaveRed    = 4;
 
-enum TrafficState { GREEN, YELLOW, RED };
-TrafficState currentState = GREEN;
-
-unsigned long stateTimer = 0;
-bool buttonPressed = false;   // Set when master sends PED_REQUEST
+void setSlaveForState(const String& state) {
+  if (state == "STATE_GREEN" || state == "STATE_YELLOW") {
+    // Master cars moving then pedestrian red then slave red
+    digitalWrite(slaveRed, HIGH);
+    digitalWrite(slaveGreen, LOW);
+    digitalWrite(slaveYellow, LOW);
+  } 
+  else if (state == "STATE_RED") {
+    // Master cars stopped then pedestrian green then slave green
+    digitalWrite(slaveRed, LOW);
+    digitalWrite(slaveGreen, HIGH);
+    digitalWrite(slaveYellow, LOW);
+  }
+}
 
 void setup() {
-  pinMode(greenLight, OUTPUT);
-  pinMode(yellowLight, OUTPUT);
-  pinMode(redLight, OUTPUT);
+  pinMode(slaveGreen, OUTPUT);
+  pinMode(slaveYellow, OUTPUT);
+  pinMode(slaveRed, OUTPUT);
 
-  // Initialize UART – must match master's baudrate
   Serial.begin(9600);
 
-  // Initial state: Green on, others off
-  digitalWrite(greenLight, HIGH);
-  digitalWrite(yellowLight, LOW);
-  digitalWrite(redLight, LOW);
-
-  stateTimer = millis();
+  // Default: assume master starts in GREEN then slave must be RED
+  digitalWrite(slaveRed, HIGH);
+  digitalWrite(slaveGreen, LOW);
+  digitalWrite(slaveYellow, LOW);
 }
 
 void loop() {
-  // ---- Receive command from master over UART ----
   if (Serial.available() > 0) {
     String msg = Serial.readStringUntil('\n');
+    msg.trim(); // remove \r, spaces
 
-    // Master sends: Serial.println("PED_REQUEST");
-    msg.trim(); // Remove any \r or spaces
-
-    if (msg == "PED_REQUEST") {
-      buttonPressed = true;
-      // (You could Serial.println("ACK"); here if you later want 2-way)
+    if (msg == "STATE_GREEN" || msg == "STATE_YELLOW" || msg == "STATE_RED") {
+      setSlaveForState(msg);
     }
-  }
-
-  // ---- Traffic light state machine ----
-  switch (currentState) {
-
-    case GREEN:
-      // Same logic as master: if buttonPressed, shorten green
-      if (millis() - stateTimer >= (buttonPressed ? 5000UL : 10000UL)) {
-        // Go to Yellow
-        digitalWrite(greenLight, LOW);
-        digitalWrite(yellowLight, HIGH);
-        currentState = YELLOW;
-        stateTimer = millis();
-      }
-      break;
-
-    case YELLOW:
-      if (millis() - stateTimer >= 2000UL) {
-        // Go to Red
-        digitalWrite(yellowLight, LOW);
-        digitalWrite(redLight, HIGH);
-        currentState = RED;
-        stateTimer = millis();
-      }
-      break;
-
-    case RED:
-      if (millis() - stateTimer >= 10000UL) {
-        // Back to Green
-        digitalWrite(redLight, LOW);
-        digitalWrite(greenLight, HIGH);
-
-        // Reset request for the next cycle
-        buttonPressed = false;
-
-        currentState = GREEN;
-        stateTimer = millis();
-      }
-      break;
   }
 }
