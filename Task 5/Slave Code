@@ -1,0 +1,82 @@
+// SLAVE (Bottom Arduino) - UART version
+
+// Traffic light pins for the slave intersection
+const int greenLight  = 2;
+const int yellowLight = 3;
+const int redLight    = 4;
+
+enum TrafficState { GREEN, YELLOW, RED };
+TrafficState currentState = GREEN;
+
+unsigned long stateTimer = 0;
+bool buttonPressed = false;   // Set when master sends PED_REQUEST
+
+void setup() {
+  pinMode(greenLight, OUTPUT);
+  pinMode(yellowLight, OUTPUT);
+  pinMode(redLight, OUTPUT);
+
+  // Initialize UART – must match master's baudrate
+  Serial.begin(9600);
+
+  // Initial state: Green on, others off
+  digitalWrite(greenLight, HIGH);
+  digitalWrite(yellowLight, LOW);
+  digitalWrite(redLight, LOW);
+
+  stateTimer = millis();
+}
+
+void loop() {
+  // ---- Receive command from master over UART ----
+  if (Serial.available() > 0) {
+    String msg = Serial.readStringUntil('\n');
+
+    // Master sends: Serial.println("PED_REQUEST");
+    msg.trim(); // Remove any \r or spaces
+
+    if (msg == "PED_REQUEST") {
+      buttonPressed = true;
+      // (You could Serial.println("ACK"); here if you later want 2-way)
+    }
+  }
+
+  // ---- Traffic light state machine ----
+  switch (currentState) {
+
+    case GREEN:
+      // Same logic as master: if buttonPressed, shorten green
+      if (millis() - stateTimer >= (buttonPressed ? 5000UL : 10000UL)) {
+        // Go to Yellow
+        digitalWrite(greenLight, LOW);
+        digitalWrite(yellowLight, HIGH);
+        currentState = YELLOW;
+        stateTimer = millis();
+      }
+      break;
+
+    case YELLOW:
+      if (millis() - stateTimer >= 2000UL) {
+        // Go to Red
+        digitalWrite(yellowLight, LOW);
+        digitalWrite(redLight, HIGH);
+        currentState = RED;
+        stateTimer = millis();
+      }
+      break;
+
+    case RED:
+      if (millis() - stateTimer >= 10000UL) {
+        // Back to Green
+        digitalWrite(redLight, LOW);
+        digitalWrite(greenLight, HIGH);
+
+        // Reset request for the next cycle
+        buttonPressed = false;
+
+        currentState = GREEN;
+        stateTimer = millis();
+      }
+      break;
+  }
+}
